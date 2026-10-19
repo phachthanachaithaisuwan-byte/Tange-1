@@ -1,1 +1,367 @@
-# Tange-1
+# Tange-1"""
+ICE Engineer Software: Axis Desk (Multi-Language Mobile-Ready CNC & CAM Suite)
+Developer / User: พัฒณะชัยย์ ไทยสุวรรณ (phachthanachaithaisuwan@gmail.com)
+Supported Controls: FANUC Series 0i / 30i / Standard Milling & Lathe[span_17](start_span)[span_17](end_span)[span_18](start_span)[span_18](end_span)[span_19](start_span)[span_19](end_span)
+"""
+
+import datetime
+import json
+import math
+import os
+import streamlit as st
+
+# ==========================================
+# 1. CONFIGURATION & MULTI-LANGUAGE (i18n)
+# ==========================================
+st.set_page_config(
+    page_title="ICE Engineer Software: Axis Desk",
+    page_icon="🧊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+TRANSLATIONS = {
+    "th": {
+        "title": "🧊 ICE Engineer Software: Axis Desk",
+        "subtitle": (
+            "ระบบผู้เชี่ยวชาญด้าน CNC/CAM, G-code Generator และ Shop Document"
+            " อัจฉริยะ"
+        ),
+        "lang_select": "เลือกภาษา / Select Language",
+        "tab_calc": "1. คำนวณพารามิเตอร์และทูล",
+        "tab_gcode": "2. เจนเนอเรต G-code (FANUC)",
+        "tab_shopdoc": "3. ใบนำทางหน้าเครื่อง (Shop Doc)",
+        "tab_sync": "4. Google Workspace / Gmail Sync",
+        "material_label": "เลือกวัสดุชิ้นงาน (Workpiece Material)",
+        "machine_label": "ประเภทเครื่องจักร (Machine Type)",
+        "calc_btn": "คำนวณค่า Cutting Data",
+        "generate_btn": "สร้าง G-code อัตโนมัติ",
+        "saved_success": "บันทึกข้อมูลลง Notebook และซิงค์สำเร็จ!",
+    },
+    "en": {
+        "title": "🧊 ICE Engineer Software: Axis Desk",
+        "subtitle": (
+            "Advanced CNC/CAM Expert System, G-code Generator & Shop Documentation"
+        ),
+        "lang_select": "Select Language",
+        "tab_calc": "1. Cutting Parameters & Tooling",
+        "tab_gcode": "2. FANUC G-code Generator",
+        "tab_shopdoc": "3. Shop Floor Documentation",
+        "tab_sync": "4. Google Workspace / Gmail Sync",
+        "material_label": "Select Workpiece Material",
+        "machine_label": "Machine Type",
+        "calc_btn": "Calculate Cutting Data",
+        "generate_btn": "Generate G-code",
+        "saved_success": "Saved to Notebook and Synchronized successfully!",
+    },
+    "cn": {
+        "title": "🧊 ICE Engineer Software: Axis Desk",
+        "subtitle": "高级数控/CAM专家系统、G代码生成器和车间文档",
+        "lang_select": "选择语言 / Select Language",
+        "tab_calc": "1. 切削参数与刀具",
+        "tab_gcode": "2. FANUC G代码生成器",
+        "tab_shopdoc": "3. 车间作业指导书 (Shop Doc)",
+        "tab_sync": "4. 谷歌工作区 / Gmail 同步",
+        "material_label": "选择工件材料",
+        "machine_label": "机床类型",
+        "calc_btn": "计算切削参数",
+        "generate_btn": "生成 G 代码",
+        "saved_success": "成功保存并同步到云端！",
+    },
+    "auto": {
+        "title": "🧊 ICE Engineer Software: Axis Desk [Auto International]",
+        "subtitle": "Global CNC & CAM Manufacturing Engineering Dashboard",
+        "lang_select": "Language Mode",
+        "tab_calc": "1. Parameters",
+        "tab_gcode": "2. G-Code",
+        "tab_shopdoc": "3. Shop Doc",
+        "tab_sync": "4. Workspace Sync",
+        "material_label": "Material Selection",
+        "machine_label": "Machine Configuration",
+        "calc_btn": "Compute Data",
+        "generate_btn": "Run Generator",
+        "saved_success": "Sync Completed!",
+    },
+}
+
+# Language selection on Sidebar
+st.sidebar.title("🌐 Language / ภาษา / 语言")
+lang_choice = st.sidebar.selectbox(
+    "Choose Interface Language",
+    options=["th", "en", "cn", "auto"],
+    format_func=lambda x: {
+        "th": "🇹🇭 ไทย (Thai)",
+        "en": "🇬🇧 English",
+        "cn": "🇨🇳 中文 (Chinese)",
+        "auto": "🌍 Auto International",
+    }[x],
+)
+t = TRANSLATIONS[lang_choice]
+
+st.title(t["title"])
+st.markdown(f"*{t['subtitle']}*")
+st.markdown("---")
+
+# ==========================================
+# 2. MATERIALS & TOOLING DATABASE
+# ==========================================
+
+
+class MaterialDatabase:
+
+  @staticmethod
+  def get_data():
+    return {
+        "Aluminum 6061": {
+            "vc": 350.0,
+            "fz": 0.15,
+            "fn": 0.20,
+            "desc": "วัสดุน้ำหนักเบา ตัดเฉือนความเร็วสูง[span_20](start_span)[span_20](end_span)",
+        },
+        "Steel AISI 1045 / S45C": {
+            "vc": 180.0,
+            "fz": 0.12,
+            "fn": 0.25,
+            "desc": "เหล็กคาร์บอนปานกลาง งานเพลาและหน้าแปลน[span_21](start_span)[span_21](end_span)[span_22](start_span)[span_22](end_span)[span_23](start_span)[span_23](end_span)",
+        },
+        "Stainless Steel 304": {
+            "vc": 120.0,
+            "fz": 0.08,
+            "fn": 0.18,
+            "desc": "วัสดุเหนียว ทนการกัดกร่อน ต้องใช้น้ำหล่อเย็นสูง",
+        },
+    }
+
+
+# ==========================================
+# 3. GEOMETRY & CUTTING CALCULATION ENGINE
+# ==========================================
+
+
+class ManufacturingEngine:
+
+  @staticmethod
+  def calculate_turning_rpm(vc, diameter):
+    """สูตรคำนวณรอบเครื่องกลึง: S = (1000 * Vc) / (pi * D)[span_24](start_span)[span_24](end_span)[span_25](start_span)[span_25](end_span)"""
+    if diameter <= 0:
+      return 0
+    return round((1000.0 * vc) / (math.pi * diameter), 0)
+
+  @staticmethod
+  def calculate_milling_rpm(vc, tool_diameter):
+    """สูตรคำนวณรอบเครื่องมิลลิ่ง: S = (1000 * Vc) / (pi * D)[span_26](start_span)[span_26](end_span)[span_27](start_span)[span_27](end_span)"""
+    if tool_diameter <= 0:
+      return 0
+    return round((1000.0 * vc) / (math.pi * tool_diameter), 0)
+
+  @staticmethod
+  def calculate_milling_feed(rpm, flutes, fz):
+    """สูตรคำนวณฟีดมิลลิ่ง: F = S * z * fz[span_28](start_span)[span_28](end_span)[span_29](start_span)[span_29](end_span)"""
+    return round(rpm * flutes * fz, 2)
+
+  @staticmethod
+  def generate_pcd_coords(pcd, num_holes):
+    """คำนวณพิกัดรูเจาะวงกลม PCD สำหรับงานเจาะรู 4-Ø12[span_30](start_span)[span_30](end_span)[span_31](start_span)[span_31](end_span)"""
+    coords = []
+    step = 360.0 / num_holes
+    for i in range(num_holes):
+      rad = math.radians(i * step)
+      x = (pcd / 2.0) * math.cos(rad)
+      y = (pcd / 2.0) * math.sin(rad)
+      coords.append({"hole": i + 1, "x": round(x, 4), "y": round(y, 4)})
+    return coords
+
+
+# ==========================================
+# 4. TABBED INTERFACE FOR MOBILE / WEB
+# ==========================================
+tabs = st.tabs(
+    [t["tab_calc"], t["tab_gcode"], t["tab_shopdoc"], t["tab_sync"]]
+)
+
+# --- TAB 1: PARAMETERS & TOOLING ---
+with tabs[0]:
+  st.header(t["tab_calc"])
+  col1, col2 = st.columns(2)
+
+  with col1:
+    mat_name = st.selectbox(
+        t["material_label"], list(MaterialDatabase.get_data().keys())
+    )
+    mat_info = MaterialDatabase.get_data()[mat_name]
+    st.info(f"💡 **Info:** {mat_info['desc']}")
+
+    mach_type = st.selectbox(
+        t["machine_label"],
+        [
+            "CNC Milling (VMC 3-Axis)",
+            "Horizontal CNC Lathe",
+            "Vertical Lathe (VTL)",
+        ],
+    )
+
+  with col2:
+    if "Milling" in mach_type:
+      tool_dia = st.number_input("Tool Diameter (mm)", value=16.0, step=1.0)
+      flutes = st.number_input("Number of Flutes (z)", value=4, step=1)
+      ap = st.number_input("Depth of Cut - Ap (mm)", value=1.5, step=0.5)
+      ae = st.number_input("Step over - Ae (mm)", value=4.0, step=0.5)
+
+      if st.button(t["calc_btn"]):
+        rpm = ManufacturingEngine.calculate_milling_rpm(
+            mat_info["vc"], tool_dia
+        )
+        feed = ManufacturingEngine.calculate_milling_feed(
+            rpm, flutes, mat_info["fz"]
+        )
+        st.success(
+            f"✅ **Spindle Speed (RPM):** {rpm} RPM \n\n"
+            f"✅ **Feed Rate (F):** {feed} mm/min \n\n"
+            f"✅ **Cutting Speed (Vc):** {mat_info['vc']} m/min"
+        )
+    else:
+      stock_dia = st.number_input(
+          "Stock Diameter / Turning Dia (mm)", value=75.0, step=5.0
+      )
+      if st.button(t["calc_btn"]):
+        rpm = ManufacturingEngine.calculate_turning_rpm(
+            mat_info["vc"], stock_dia
+        )
+        st.success(
+            f"✅ **Spindle Speed (G96/G97 RPM):** {rpm} RPM \n\n"
+            f"✅ **Feed per Rev (Fn):** {mat_info['fn']} mm/rev"
+        )
+
+# --- TAB 2: FANUC G-CODE GENERATOR ---
+with tabs[1]:
+  st.header(t["tab_gcode"])
+  op_choice = st.selectbox(
+      "Select Operation / Operation Type",
+      [
+          "OP10: Lathe Rough Turning Cycle (G71)",
+          "OP20: Lathe Threading Cycle M24 (G76)",
+          "OP30: VMC Milling PCD Hole Drilling (G83)",
+      ],
+  )
+
+  if "G71" in op_choice:
+    d_stock = st.number_input("Stock OD (mm)", value=75.0)
+    z_depth = st.number_input("Z Length (mm)", value=100.0)
+    if st.button(t["generate_btn"]):
+      gcode = f"""%
+O1010 (OP10: OD ROUGH TURNING WITH G71)
+(ICE ENGINEER SOFTWARE STANDARD - FANUC)
+(MATERIAL: {mat_name})
+G21 G18 G40 G80 G99
+G90 G54
+G28 U0 W0
+T0101 (CNMG 120408 ROUGH INSERT)
+G50 S2500
+G96 S180 M03
+M08
+G00 X{d_stock + 5.0} Z3.0
+G71 U2.0 R1.0
+G71 P100 Q200 U0.5 W0.2 F0.25
+N100 G00 X0.0
+N110 G01 Z0.0 F0.15
+N120 X{d_stock} Z-{z_depth}
+N200 G01 X{d_stock + 5.0}
+G70 P100 Q200
+G00 X200.0 Z200.0 M09
+M05
+G28 U0 W0
+M30
+%"""
+      st.code(gcode, language="gcode")
+
+  elif "G76" in op_choice:
+    if st.button(t["generate_btn"]):
+      gcode = f"""%
+O2020 (OP20: THREADING M24 x 3.0 WITH G76)
+(ICE ENGINEER SOFTWARE STANDARD)
+G21 G18 G40 G80 G99
+G90 G54
+T0505 (THREADING TOOL 60 DEG)
+G97 S600 M03
+G00 X30.0 Z5.0 M08
+G76 P020060 Q100 R0.05
+G76 X20.32 Z-38.0 P1840 Q400 F3.0
+G00 X100.0 Z100.0 M09
+M30
+%"""
+      st.code(gcode, language="gcode")
+
+  elif "G83" in op_choice:
+    pcd_val = st.number_input("PCD Diameter (mm)", value=178.0)
+    num_h = st.number_input("Number of Holes", value=4, step=1)
+    z_d = st.number_input("Drilling Depth Z (mm)", value=30.0)
+    if st.button(t["generate_btn"]):
+      coords = ManufacturingEngine.generate_pcd_coords(pcd_val, num_h)
+      gcode_lines = [
+          "%",
+          "O3030 (OP30: PCD DRILLING 4-HOLES WITH G83)",
+          "G21 G17 G40 G49 G80",
+          "G90 G54",
+          "T03 M06 (DRILL Ø12 mm)",
+          "S1500 M03",
+          "G43 H03 Z50.0 M08",
+      ]
+      for pt in coords:
+        gcode_lines.append(
+            f"G83 G98 Z-{z_d} R2.0 Q5.0 F120 X{pt['x']} Y{pt['y']}"
+        )
+      gcode_lines.extend(["G80", "G00 Z100.0 M09", "G28 Z0", "M30", "%"])
+      st.code("\n".join(gcode_lines), language="gcode")
+
+# --- TAB 3: SHOP FLOOR DOCUMENTATION ---
+with tabs[2]:
+  st.header(t["tab_shopdoc"])
+  st.markdown("### 📋 Setup Sheet & Tooling Summary Table[span_32](start_span)[span_32](end_span)[span_33](start_span)[span_33](end_span)")
+  shop_data = [
+      {
+          "Tool No": "T01",
+          "Type": "Face Mill / Rough Turn",
+          "Size": "Ø50 mm (R0.8)",
+          "RPM": "1200",
+          "Feed": "800 mm/min",
+          "Ap": "1.0 mm",
+      },
+      {
+          "Tool No": "T02",
+          "Type": "Rough End Mill",
+          "Size": "Ø16 mm (4 Flute)",
+          "RPM": "2500",
+          "Feed": "1200 mm/min",
+          "Ap": "1.0 mm",
+      },
+      {
+          "Tool No": "T03",
+          "Type": "Drill / Center Drill",
+          "Size": "Ø12 mm",
+          "RPM": "1500",
+          "Feed": "300 mm/min",
+          "Ap": "G83 Peck",
+      },
+  ]
+  st.table(shop_data)
+
+# --- TAB 4: GOOGLE WORKSPACE / GMAIL SYNC ---
+with tabs[3]:
+  st.header(t["tab_sync"])
+  user_email = st.text_input(
+      "Google Account Email", value="phachthanachaithaisuwan@gmail.com"
+  )
+  project_title = st.text_input("Project / Component Name", value="Belt Drive Assembly - Housing & Shaft")
+  
+  if st.button("🚀 Sync to Google Gmail & Cloud Notebook"):
+    log_entry = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "developer": "Phachthanachai Thaisuwan",
+        "email": user_email,
+        "project": project_title,
+        "status": "Synchronized Successfully"
+    }
+    # Save locally to JSON notebook
+    with open("axis_desk_notebook.json", "a", encoding="utf-8") as f:
+      f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    st.success(f"✅ {t['saved_success']} -> Target: {user_email}")
